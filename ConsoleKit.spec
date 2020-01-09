@@ -6,14 +6,16 @@
 Summary: System daemon for tracking users, sessions and seats
 Name: ConsoleKit
 Version: 0.4.1
-Release: 3%{?dist}
+Release: 6%{?dist}
 License: GPLv2+
 Group: System Environment/Libraries
 URL: http://www.freedesktop.org/wiki/Software/ConsoleKit
 Source0: http://www.freedesktop.org/software/ConsoleKit/dist/ConsoleKit-%{version}.tar.bz2
+Source1: consolekit.logrotate
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 Requires: dbus >= %{dbus_version}
 Requires: dbus-glib >= %{dbus_glib_version}
+Conflicts: upstart < 0.6.0
 
 BuildRequires: glib2-devel >= %{glib2_version}
 BuildRequires: dbus-devel  >= %{dbus_version}
@@ -29,6 +31,12 @@ BuildRequires: automake, autoconf, libtool
 Patch0: nodaemon.patch
 # https://bugzilla.redhat.com/show_bug.cgi?id=547808
 Patch1: reorder-initialization.patch
+Patch2: 0001-When-assigning-session-to-active-VT-prefer-graphical.patch
+Patch3: ConsoleKit-0.4.1-upstart06.patch
+Patch4: 0001-Only-set-sessions-to-be-is-local-true-if-set-by-a-tr.patch
+Patch5: 0001-Don-t-define-rpath-in-libck-connector.la.patch
+Patch6: 0001-Bump-device-name-length-to-32.patch
+Patch7: 0001-Fix-undefined-behavior.patch
 
 %description
 ConsoleKit is a system daemon for tracking what users are logged
@@ -86,8 +94,15 @@ This package contains developer documentation for ConsoleKit.
 %setup -q
 %patch0 -p1 -b .nodaemon
 %patch1 -p1 -b .reorder-initialization
+%patch2 -p1 -b .active-session
+%patch3 -p1 -b .upstart
+%patch4 -p1 -b .CVE-2010-4664
+%patch5 -p1 -b .rpath
+%patch6 -p1 -b .device-len
+%patch7 -p1 -b .aliasing
 
 %build
+autoreconf -fi
 %configure --with-pid-file=%{_localstatedir}/run/console-kit-daemon.pid --enable-pam-module --with-pam-module-dir=/%{_lib}/security --enable-docbook-docs --docdir=%{_datadir}/doc/%{name}-%{version}
 
 make
@@ -105,10 +120,14 @@ rm -f $RPM_BUILD_ROOT/%{_lib}/security/*.la
 rm -f $RPM_BUILD_ROOT/%{_var}/log/ConsoleKit/history
 
 # The sample upstart files are good enough for us.
-mkdir -p $RPM_BUILD_ROOT%{_sysconfdir}/event.d
-cp data/ck-log-system-{start,stop,restart} $RPM_BUILD_ROOT%{_sysconfdir}/event.d
+mkdir -p $RPM_BUILD_ROOT%{_sysconfdir}/init
+cp data/ck-log-system-{start,stop,restart}.conf $RPM_BUILD_ROOT%{_sysconfdir}/init
 
 cp README AUTHORS NEWS COPYING $RPM_BUILD_ROOT%{_datadir}/doc/%{name}-%{version}
+
+# install logrotate config
+mkdir -p $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d/
+cp -p %{SOURCE1} $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d/%{name}
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -126,7 +145,8 @@ fi
 %doc %{_datadir}/doc/%{name}-%{version}/NEWS
 %doc %{_datadir}/doc/%{name}-%{version}/COPYING
 %{_sysconfdir}/dbus-1/system.d/*
-%config(noreplace) %{_sysconfdir}/event.d/*
+%config(noreplace) %{_sysconfdir}/init/*
+%config(noreplace) %{_sysconfdir}/logrotate.d/%{name}
 %{_datadir}/dbus-1/system-services/*.service
 %{_datadir}/polkit-1/actions/*.policy
 %dir %{_sysconfdir}/ConsoleKit
@@ -173,6 +193,19 @@ fi
 %doc %{_datadir}/doc/%{name}-%{version}/spec/*
 
 %changelog
+* Fri Mar 04 2016 Michal Sekletar <msekleta@redhat.com> - 0.4.1-6
+- install logrotate config to /etc/logrotate.d/ConsoleKit (#634935)
+
+* Mon Jan 18 2016 Michal Sekletar <msekleta@redhat.com> - 0.4.1-5
+- fix strict aliasing issue (#1299572)
+
+* Mon Jan 18 2016 Michal Sekletar <msekleta@redhat.com> - 0.4.1-4
+- identify X session launched on currently used VT as active (#1058647)
+- upstart-0.6.0 and higher doesn't use /etc/event.d anymore, move ck-log-system-restart and friends to /etc/init (#681696)
+- fix CVE-2010-4664 (#585952)
+- added logrotate config file (#634935)
+- bump maximum device name length. Fix issue with certain devices where device name is longer than 16 characters (#1070249)
+
 * Tue Jan 05 2010 Ray Strode <rstrode@redhat.com> 0.4.1-3
 Resolves: #547808
 - Register object methods with dbus-glib before taking bus name
